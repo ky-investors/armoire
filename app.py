@@ -617,6 +617,49 @@ WEATHER_JP = {
     "Haze":         "もや",
 }
 
+def fetch_forecast(target_date) -> dict | None:
+    """OpenWeatherMap 5日間予報から指定日の天気を取得して返す。"""
+    try:
+        url = (
+            f"https://api.openweathermap.org/data/2.5/forecast"
+            f"?q={OPENWEATHER_CITY}&appid={OPENWEATHER_KEY}"
+            f"&units=metric&lang=ja&cnt=40"
+        )
+        resp = requests.get(url, timeout=8)
+        resp.raise_for_status()
+        data = resp.json()
+        import datetime as dt
+        target_str = target_date.strftime("%Y-%m-%d")
+        # 対象日の予報を全て集めて平均
+        entries = [e for e in data["list"] if e["dt_txt"].startswith(target_str)]
+        if not entries:
+            return None
+        # 昼12時のデータを優先、なければ最初
+        noon = [e for e in entries if "12:00" in e["dt_txt"]]
+        entry = noon[0] if noon else entries[len(entries)//2]
+        main_en = entry["weather"][0]["main"]
+        desc_ja = entry["weather"][0]["description"]
+        temp    = entry["main"]["temp"]
+        feels   = entry["main"]["feels_like"]
+        humidity= entry["main"]["humidity"]
+        WEATHER_JP2 = {
+            "Clear":"晴れ","Clouds":"曇り","Rain":"雨","Drizzle":"小雨",
+            "Thunderstorm":"雷雨","Snow":"雪","Mist":"もや","Fog":"霧","Haze":"もや",
+        }
+        WEATHER_EMOJI2 = {
+            "Clear":"☀️","Clouds":"☁️","Rain":"🌧","Drizzle":"🌦",
+            "Thunderstorm":"⛈","Snow":"❄️","Mist":"🌫","Fog":"🌫","Haze":"🌫",
+        }
+        main_jp = WEATHER_JP2.get(main_en, main_en)
+        emoji   = WEATHER_EMOJI2.get(main_en, "🌡")
+        return {
+            "emoji": emoji, "main_jp": main_jp, "desc_ja": desc_ja,
+            "temp": round(temp, 1), "feels": round(feels, 1), "humidity": humidity,
+        }
+    except Exception:
+        return None
+
+
 def fetch_weather() -> dict | None:
     """OpenWeatherMap から現在の天気を取得して辞書で返す。失敗時は None。"""
     try:
@@ -1054,12 +1097,34 @@ def page_suggest():
         return
 
     # ── 天気ブロック ──
-    st.markdown("### 🌍 今日の天気")
+    st.markdown("### 🌍 日付と天気")
 
-    # 天気自動取得ボタン
-    if st.button("🌍 現在の天気を自動取得", use_container_width=True):
+    import datetime as _dt
+    today = _dt.date.today()
+    date_options = [today + _dt.timedelta(days=i) for i in range(5)]
+    date_labels = []
+    for d in date_options:
+        if d == today:
+            date_labels.append(f"今日 ({d.strftime('%m/%d')})")
+        elif d == today + _dt.timedelta(days=1):
+            date_labels.append(f"明日 ({d.strftime('%m/%d')})")
+        else:
+            date_labels.append(d.strftime("%m/%d (%a)"))
+
+    selected_label = st.selectbox("📅 日付を選択", date_labels, key="date_select")
+    selected_date  = date_options[date_labels.index(selected_label)]
+
+    if st.session_state.get("weather_date") != str(selected_date):
+        st.session_state["weather_date"]    = str(selected_date)
+        st.session_state["weather_main_jp"] = None
+        st.session_state["weather_data"]    = None
+
+    if st.session_state.get("weather_main_jp") is None:
         with st.spinner("天気情報を取得中..."):
-            w = fetch_weather()
+            if selected_date == today:
+                w = fetch_weather()
+            else:
+                w = fetch_forecast(selected_date)
         if w:
             st.session_state["weather_main_jp"] = w["main_jp"]
             st.session_state["weather_temp"]    = w["temp"]
