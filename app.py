@@ -100,6 +100,21 @@ def delete_item(item_id: int):
         delete_storage_image(res.data[0].get("image_url", ""))
     sb.table("clothing_items").delete().eq("id", item_id).execute()
 
+def update_item(item_id: int, tags: dict):
+    """アイテムのタグ情報を更新する"""
+    res = sb.table("clothing_items").update({
+        "category":       tags.get("category"),
+        "sub_category":   tags.get("sub_category"),
+        "color_main":     tags.get("color_main"),
+        "color_sub":      tags.get("color_sub"),
+        "material":       tags.get("material"),
+        "season":         json.dumps(tags.get("season", []), ensure_ascii=False),
+        "style_tags":     json.dumps(tags.get("style_tags", []), ensure_ascii=False),
+        "condition_note": tags.get("condition_note"),
+    }).eq("id", item_id).execute()
+    return res
+
+
 def update_wear_record(item_id: int):
     sb  = _get_sb()
     now = datetime.datetime.now().isoformat()
@@ -1076,17 +1091,70 @@ def _render_item_card(item: dict):
     """, unsafe_allow_html=True)
 
     with st.expander("⚙ 操作", expanded=False):
-        col_a, col_b = st.columns(2)
+        col_a, col_b, col_c = st.columns(3)
         with col_a:
             if st.button("👕 着用記録", key=f"wear_{item['id']}", use_container_width=True):
                 update_wear_record(item["id"])
                 st.success("記録しました！")
                 st.rerun()
         with col_b:
+            edit_key = f"edit_mode_{item['id']}"
+            if st.button("✏️ 編集", key=f"edit_{item['id']}", use_container_width=True):
+                st.session_state[edit_key] = not st.session_state.get(edit_key, False)
+        with col_c:
             if st.button("🗑 削除", key=f"del_{item['id']}", use_container_width=True):
                 delete_item(item["id"])
                 st.success("削除しました。")
                 st.rerun()
+
+    # 編集フォーム
+    if st.session_state.get(f"edit_mode_{item['id']}", False):
+        st.markdown("---")
+        st.markdown("**✏️ アイテム情報を編集**")
+
+        cat_opts = ["トップス", "ボトムス", "アウター", "ワンピース",
+                    "バッグ", "シューズ", "アクセサリー", "その他"]
+        e_cat = st.selectbox("カテゴリー", cat_opts,
+                              index=cat_opts.index(item.get("category","その他"))
+                              if item.get("category") in cat_opts else 0,
+                              key=f"ecat_{item['id']}")
+        e_sub = st.text_input("サブカテゴリー", value=item.get("sub_category") or "",
+                               key=f"esub_{item['id']}")
+        e_color = st.text_input("メインカラー", value=item.get("color_main") or "",
+                                 key=f"ecol_{item['id']}")
+        e_material = st.text_input("素材", value=item.get("material") or "",
+                                    key=f"emat_{item['id']}")
+
+        season_opts = ["春", "夏", "秋", "冬"]
+        current_season = _safe_json_loads(item.get("season", "[]"))
+        e_season = st.multiselect("季節", season_opts, default=current_season,
+                                   key=f"esea_{item['id']}")
+
+        style_opts = ["カジュアル", "フォーマル", "フェミニン",
+                      "ストリート", "ナチュラル", "クール", "エレガント"]
+        current_style = _safe_json_loads(item.get("style_tags", "[]"))
+        e_style = st.multiselect("スタイルタグ", style_opts, default=current_style,
+                                  key=f"esty_{item['id']}")
+
+        e_note = st.text_area("メモ・特記事項（コーデ提案の参考になります）",
+                               value=item.get("condition_note") or "",
+                               height=80, key=f"enote_{item['id']}")
+
+        if st.button("💾 変更を保存", type="primary",
+                     use_container_width=True, key=f"esave_{item['id']}"):
+            updated_tags = {
+                "category": e_cat,
+                "sub_category": e_sub,
+                "color_main": e_color,
+                "material": e_material,
+                "season": e_season,
+                "style_tags": e_style,
+                "condition_note": e_note,
+            }
+            update_item(item["id"], updated_tags)
+            st.success("✅ 更新しました！")
+            st.session_state[f"edit_mode_{item['id']}"] = False
+            st.rerun()
 
 # ════════════════════════════════════════════
 # ページ: コーデ提案
