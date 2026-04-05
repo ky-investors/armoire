@@ -1317,7 +1317,7 @@ def page_cosmetic_list():
             c = filtered[idx]
             with col:
                 image_url = c.get("image_url", "")
-                if image_url:
+                if image_url and image_url.startswith("http"):
                     st.image(image_url, use_container_width=True)
                 else:
                     st.markdown(
