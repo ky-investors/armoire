@@ -346,7 +346,7 @@ COORD_SYSTEM_PROMPT = """
 }
 """
 
-def suggest_coord_with_gemini(items: list[dict], profile: dict, weather: dict | None = None) -> dict:
+def suggest_coord_with_gemini(items: list[dict], profile: dict, weather: dict | None = None, tpo: str = "") -> dict:
     api_key = get_api_key()
     if not api_key:
         return {"outfits": [], "general_advice": "APIキーを設定してください。"}
@@ -410,7 +410,7 @@ MAKEUP_SYSTEM_PROMPT = """
 }
 """
 
-def suggest_makeup_with_gemini(cosmetics: list[dict], profile: dict) -> dict:
+def suggest_makeup_with_gemini(cosmetics: list[dict], profile: dict, tpo: str = "") -> dict:
     api_key = get_api_key()
     if not api_key:
         return {"looks": [], "general_advice": "APIキーを設定してください。"}
