@@ -367,6 +367,7 @@ def suggest_coord_with_gemini(items: list[dict], profile: dict, weather: dict | 
             )
         else:
             weather_text = "（天気情報なし）"
+        tpo_text = f"【今日のTPO・シーン】\n{tpo}" if tpo else ""
         prompt = f"""
 【ユーザープロフィール】
 {profile_text}
@@ -374,10 +375,13 @@ def suggest_coord_with_gemini(items: list[dict], profile: dict, weather: dict | 
 【今日の天気・気温】
 {weather_text}
 
+{tpo_text}
+
 【クローゼット内容】
 {closet_text}
 
 上記のクローゼットから実際に着られる具体的なコーデを3パターン提案してください。
+【重要】3パターン全て、指定されたTPO・シーン「{tpo}」に合ったコーデにしてください。
 今日の天気と気温に必ず合わせてください（雨なら防水・暗色系、寒ければレイヤード等）。
 プロフィールの理想スタイル・パーソナルカラーを必ず考慮してください。
 """
