@@ -7,7 +7,7 @@ Armoire — Phase 4 Final
 import os
 import io
 import json
-import sqlite3
+import uuid
 import datetime
 import requests
 from pathlib import Path
@@ -16,252 +16,157 @@ import streamlit as st
 from PIL import Image
 
 # ════════════════════════════════════════════
-# 定数・設定
+# シークレット読み込み（st.secrets → 環境変数）
 # ════════════════════════════════════════════
-DB_PATH   = "armoire.db"
-IMAGE_DIR = Path("images")
-IMAGE_DIR.mkdir(exist_ok=True)
+def _secret(key: str, default: str = "") -> str:
+    try:
+        return st.secrets[key]
+    except Exception:
+        return os.environ.get(key, default)
 
-# ── OpenWeatherMap（ハードコード） ──
-OPENWEATHER_API_KEY = ""
-OPENWEATHER_CITY    = "Tokyo"
+SUPABASE_URL     = _secret("SUPABASE_URL")
+SUPABASE_KEY     = _secret("SUPABASE_KEY")
+GEMINI_API_KEY_ENV = _secret("GEMINI_API_KEY")
+OPENWEATHER_KEY  = _secret("OPENWEATHER_API_KEY")
+OPENWEATHER_CITY = "Tokyo"
+STORAGE_BUCKET   = "images"
 
 def get_api_key() -> str:
-    return st.session_state.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
+    return st.session_state.get("gemini_api_key") or GEMINI_API_KEY_ENV
+
+@st.cache_resource
+def _get_sb():
+    try:
+        from supabase import create_client
+    except ImportError:
+        st.error("❌ supabase パッケージが不足しています。")
+        st.stop()
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        st.error("❌ SUPABASE_URL / SUPABASE_KEY が未設定です。Streamlit Cloud の Secrets を確認してください。")
+        st.stop()
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ════════════════════════════════════════════
 # DB 初期化
 # ════════════════════════════════════════════
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-
-    # ── 服・アクセサリーテーブル ──
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS clothing_items (
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            image_path     TEXT    NOT NULL,
-            category       TEXT,
-            sub_category   TEXT,
-            color_main     TEXT,
-            color_sub      TEXT,
-            material       TEXT,
-            season         TEXT,
-            style_tags     TEXT,
-            condition_note TEXT,
-            wear_count     INTEGER DEFAULT 0,
-            last_worn_at   TEXT,
-            created_at     TEXT    NOT NULL
-        )
-    """)
-
-    # ── コスメテーブル ──
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS cosmetics (
-            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-            image_path           TEXT    NOT NULL,
-            category             TEXT,
-            brand                TEXT,
-            product_name         TEXT,
-            color_name           TEXT,
-            color_number         TEXT,
-            finish               TEXT,
-            personal_color_match TEXT,
-            notes                TEXT,
-            use_count            INTEGER DEFAULT 0,
-            last_used_at         TEXT,
-            created_at           TEXT    NOT NULL
-        )
-    """)
-
-    # ── ユーザープロフィールテーブル ──
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS user_profile (
-            id               INTEGER PRIMARY KEY CHECK (id = 1),
-            height_cm        INTEGER DEFAULT 165,
-            weight_kg        INTEGER DEFAULT 52,
-            personal_color   TEXT    DEFAULT 'ウィンタータイプ（ブルーベース・コントラスト強め）',
-            ideal_style      TEXT    DEFAULT 'ハンサム女子（知的・クール・エッジ。過度に可愛くならない）',
-            job              TEXT    DEFAULT '外資系スポーツアパレルメーカー勤務',
-            lifestyle        TEXT    DEFAULT '子供なし。仕事・友人・自分磨き中心',
-            updated_at       TEXT
-        )
-    """)
-
-    # デフォルト行挿入
-    c.execute("""
-        INSERT OR IGNORE INTO user_profile (id, updated_at)
-        VALUES (1, ?)
-    """, (datetime.datetime.now().isoformat(),))
-
-    conn.commit()
-    conn.close()
+    """Supabaseのテーブル存在確認"""
+    sb = _get_sb()
+    missing = []
+    for table in ["clothing_items", "cosmetics", "user_profile"]:
+        try:
+            sb.table(table).select("id").limit(1).execute()
+        except Exception:
+            missing.append(table)
+    if missing:
+        st.error(f"⚠️ テーブルが存在しません: {', '.join(missing)}\nSupabase Dashboard → SQL Editor で作成してください。")
+        st.stop()
+    try:
+        res = sb.table("user_profile").select("id").eq("id", 1).execute()
+        if not res.data:
+            sb.table("user_profile").insert({"id": 1, "updated_at": datetime.datetime.now().isoformat()}).execute()
+    except Exception:
+        pass
 
 # ════════════════════════════════════════════
 # DB — 服・アクセサリー CRUD
 # ════════════════════════════════════════════
-def save_item(image_path: str, tags: dict) -> int:
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+def save_item(image_url: str, tags: dict) -> int:
+    sb  = _get_sb()
     now = datetime.datetime.now().isoformat()
-    c.execute("""
-        INSERT INTO clothing_items
-            (image_path, category, sub_category, color_main, color_sub,
-             material, season, style_tags, condition_note, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
-    """, (
-        image_path,
-        tags.get("category"),
-        tags.get("sub_category"),
-        tags.get("color_main"),
-        tags.get("color_sub"),
-        tags.get("material"),
-        json.dumps(tags.get("season", []), ensure_ascii=False),
-        json.dumps(tags.get("style_tags", []), ensure_ascii=False),
-        tags.get("condition_note"),
-        now,
-    ))
-    new_id = c.lastrowid
-    conn.commit()
-    conn.close()
-    return new_id
+    res = sb.table("clothing_items").insert({
+        "image_url":     image_url,
+        "category":      tags.get("category"),
+        "sub_category":  tags.get("sub_category"),
+        "color_main":    tags.get("color_main"),
+        "color_sub":     tags.get("color_sub"),
+        "material":      tags.get("material"),
+        "season":        json.dumps(tags.get("season", []),     ensure_ascii=False),
+        "style_tags":    json.dumps(tags.get("style_tags", []), ensure_ascii=False),
+        "condition_note": tags.get("condition_note"),
+        "created_at":    now,
+    }).execute()
+    return res.data[0]["id"] if res.data else 0
 
-def fetch_all_items() -> list[dict]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM clothing_items ORDER BY created_at DESC")
-    rows = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return rows
+def fetch_all_items() -> list:
+    sb  = _get_sb()
+    res = sb.table("clothing_items").select("*").order("created_at", desc=True).execute()
+    return res.data or []
 
 def delete_item(item_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT image_path FROM clothing_items WHERE id=?", (item_id,))
-    row = c.fetchone()
-    if row:
-        img_path = Path(row[0])
-        if img_path.exists():
-            img_path.unlink()
-    c.execute("DELETE FROM clothing_items WHERE id=?", (item_id,))
-    conn.commit()
-    conn.close()
+    sb  = _get_sb()
+    res = sb.table("clothing_items").select("image_url").eq("id", item_id).execute()
+    if res.data:
+        delete_storage_image(res.data[0].get("image_url", ""))
+    sb.table("clothing_items").delete().eq("id", item_id).execute()
 
 def update_wear_record(item_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    sb  = _get_sb()
     now = datetime.datetime.now().isoformat()
-    c.execute("""
-        UPDATE clothing_items
-        SET wear_count = wear_count + 1, last_worn_at = ?
-        WHERE id = ?
-    """, (now, item_id))
-    conn.commit()
-    conn.close()
+    res = sb.table("clothing_items").select("wear_count").eq("id", item_id).execute()
+    current = res.data[0]["wear_count"] if res.data else 0
+    sb.table("clothing_items").update({"wear_count": current + 1, "last_worn_at": now}).eq("id", item_id).execute()
 
 # ════════════════════════════════════════════
 # DB — コスメ CRUD
 # ════════════════════════════════════════════
-def save_cosmetic(image_path: str, tags: dict) -> int:
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+def save_cosmetic(image_url: str, tags: dict) -> int:
+    sb  = _get_sb()
     now = datetime.datetime.now().isoformat()
-    c.execute("""
-        INSERT INTO cosmetics
-            (image_path, category, brand, product_name, color_name,
-             color_number, finish, personal_color_match, notes, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
-    """, (
-        image_path,
-        tags.get("category"),
-        tags.get("brand"),
-        tags.get("product_name"),
-        tags.get("color_name"),
-        tags.get("color_number"),
-        tags.get("finish"),
-        tags.get("personal_color_match"),
-        tags.get("notes"),
-        now,
-    ))
-    new_id = c.lastrowid
-    conn.commit()
-    conn.close()
-    return new_id
+    res = sb.table("cosmetics").insert({
+        "image_url":            image_url,
+        "category":             tags.get("category"),
+        "brand":                tags.get("brand"),
+        "product_name":         tags.get("product_name"),
+        "color_name":           tags.get("color_name"),
+        "color_number":         tags.get("color_number"),
+        "finish":               tags.get("finish"),
+        "personal_color_match": tags.get("personal_color_match"),
+        "notes":                tags.get("notes"),
+        "created_at":           now,
+    }).execute()
+    return res.data[0]["id"] if res.data else 0
 
-def fetch_all_cosmetics() -> list[dict]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM cosmetics ORDER BY created_at DESC")
-    rows = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return rows
+def fetch_all_cosmetics() -> list:
+    sb  = _get_sb()
+    res = sb.table("cosmetics").select("*").order("created_at", desc=True).execute()
+    return res.data or []
 
 def delete_cosmetic(cid: int):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT image_path FROM cosmetics WHERE id=?", (cid,))
-    row = c.fetchone()
-    if row:
-        p = Path(row[0])
-        if p.exists():
-            p.unlink()
-    c.execute("DELETE FROM cosmetics WHERE id=?", (cid,))
-    conn.commit()
-    conn.close()
+    sb  = _get_sb()
+    res = sb.table("cosmetics").select("image_url").eq("id", cid).execute()
+    if res.data:
+        delete_storage_image(res.data[0].get("image_url", ""))
+    sb.table("cosmetics").delete().eq("id", cid).execute()
 
 def update_cosmetic_use(cid: int):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    sb  = _get_sb()
     now = datetime.datetime.now().isoformat()
-    c.execute("""
-        UPDATE cosmetics SET use_count=use_count+1, last_used_at=? WHERE id=?
-    """, (now, cid))
-    conn.commit()
-    conn.close()
+    res = sb.table("cosmetics").select("use_count").eq("id", cid).execute()
+    current = res.data[0]["use_count"] if res.data else 0
+    sb.table("cosmetics").update({"use_count": current + 1, "last_used_at": now}).eq("id", cid).execute()
 
 # ════════════════════════════════════════════
 # DB — プロフィール CRUD
 # ════════════════════════════════════════════
 def fetch_profile() -> dict:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM user_profile WHERE id=1")
-    row = c.fetchone()
-    conn.close()
-    if row:
-        return dict(row)
-    return {}
+    sb  = _get_sb()
+    res = sb.table("user_profile").select("*").eq("id", 1).execute()
+    return res.data[0] if res.data else {}
 
 def save_profile(profile: dict):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    sb  = _get_sb()
     now = datetime.datetime.now().isoformat()
-    c.execute("""
-        INSERT INTO user_profile
-            (id, height_cm, weight_kg, personal_color, ideal_style, job, lifestyle, updated_at)
-        VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            height_cm=excluded.height_cm,
-            weight_kg=excluded.weight_kg,
-            personal_color=excluded.personal_color,
-            ideal_style=excluded.ideal_style,
-            job=excluded.job,
-            lifestyle=excluded.lifestyle,
-            updated_at=excluded.updated_at
-    """, (
-        profile.get("height_cm", 165),
-        profile.get("weight_kg", 52),
-        profile.get("personal_color", ""),
-        profile.get("ideal_style", ""),
-        profile.get("job", ""),
-        profile.get("lifestyle", ""),
-        now,
-    ))
-    conn.commit()
-    conn.close()
+    sb.table("user_profile").upsert({
+        "id":             1,
+        "height_cm":      profile.get("height_cm", 165),
+        "weight_kg":      profile.get("weight_kg", 52),
+        "personal_color": profile.get("personal_color", ""),
+        "ideal_style":    profile.get("ideal_style", ""),
+        "job":            profile.get("job", ""),
+        "lifestyle":      profile.get("lifestyle", ""),
+        "updated_at":     now,
+    }).execute()
 
 # ════════════════════════════════════════════
 # 画像処理
@@ -277,12 +182,32 @@ def remove_background(image_bytes: bytes) -> bytes:
         st.warning(f"背景透過処理でエラー: {e}")
         return image_bytes
 
-def save_image(image_bytes: bytes, prefix: str = "img") -> str:
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    filepath = IMAGE_DIR / f"{prefix}_{ts}.png"
-    with open(filepath, "wb") as f:
-        f.write(image_bytes)
-    return str(filepath)
+def upload_image(image_bytes: bytes, prefix: str = "img") -> str:
+    """Supabase Storageに画像をアップロードして公開URLを返す"""
+    sb = _get_sb()
+    ts  = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    uid = uuid.uuid4().hex[:8]
+    filename = f"{prefix}_{ts}_{uid}.png"
+    try:
+        sb.storage.from_(STORAGE_BUCKET).upload(
+            path=filename,
+            file=image_bytes,
+            file_options={"content-type": "image/png", "upsert": "true"},
+        )
+        return sb.storage.from_(STORAGE_BUCKET).get_public_url(filename)
+    except Exception as e:
+        st.warning(f"⚠️ 画像アップロード失敗: {e}")
+        return ""
+
+def delete_storage_image(image_url: str):
+    if not image_url:
+        return
+    try:
+        sb = _get_sb()
+        filename = image_url.split("/")[-1].split("?")[0]
+        sb.storage.from_(STORAGE_BUCKET).remove([filename])
+    except Exception:
+        pass
 
 # ════════════════════════════════════════════
 # Gemini API — 服タグ付け
@@ -697,7 +622,7 @@ def fetch_weather() -> dict | None:
     try:
         url = (
             f"https://api.openweathermap.org/data/2.5/weather"
-            f"?q={OPENWEATHER_CITY}&appid={OPENWEATHER_API_KEY}"
+            f"?q={OPENWEATHER_CITY}&appid={OPENWEATHER_KEY}"
             f"&units=metric&lang=ja"
         )
         resp = requests.get(url, timeout=8)
@@ -1001,7 +926,7 @@ def page_register():
         st.divider()
         if st.button("💾 この内容でDBに保存する", type="primary", use_container_width=True, key="cl_save"):
             with st.spinner("☁️ 画像をクラウドに保存中..."):
-                image_url = save_image(st.session_state["clothing_image"], "clothing")
+                image_url = upload_image(st.session_state["clothing_image"], "clothing")
             item_id = save_item(image_url, tags)
             st.success(f"✅ 登録完了！（ID: {item_id}）クローゼット一覧で確認できます。")
             st.session_state["clothing_tags"] = None
@@ -1067,11 +992,11 @@ def page_list():
                 _render_item_card(filtered[idx])
 
 def _render_item_card(item: dict):
-    img_path = Path(item.get("image_path", ""))
+    img_path = Path(item.get("image_url", ""))
     emoji = CATEGORY_EMOJI.get(item.get("category", ""), "📦")
 
-    if img_path.exists():
-        st.image(str(img_path), use_container_width=True)
+    if img_path:
+        st.image(img_path, use_container_width=True)
     else:
         st.markdown(
             f'<div style="background:#f3f4f6;height:160px;display:flex;'
@@ -1324,7 +1249,7 @@ def page_cosmetic_register():
         st.divider()
         if st.button("💾 コスメを登録する", type="primary", use_container_width=True, key="cosme_save"):
             with st.spinner("☁️ 画像をクラウドに保存中..."):
-                image_url = save_image(st.session_state["cosme_image"], "cosme")
+                image_url = upload_image(st.session_state["cosme_image"], "cosme")
             cid = save_cosmetic(image_url, tags)
             st.success(f"✅ 登録完了！（ID: {cid}）コスメ一覧で確認できます。")
             st.session_state["cosme_tags"] = None
@@ -1391,9 +1316,9 @@ def page_cosmetic_list():
                 break
             c = filtered[idx]
             with col:
-                img_path = Path(c.get("image_path", ""))
-                if img_path.exists():
-                    st.image(str(img_path), use_container_width=True)
+                image_url = c.get("image_url", "")
+                if image_url:
+                    st.image(image_url, use_container_width=True)
                 else:
                     st.markdown(
                         '<div style="background:#fdf2f8;height:120px;display:flex;'
@@ -1743,7 +1668,7 @@ def main():
     init_db()
 
     if "gemini_api_key" not in st.session_state:
-        st.session_state["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
+        st.session_state["gemini_api_key"] = GEMINI_API_KEY_ENV
 
     # ─── サイドバー ───
     with st.sidebar:
