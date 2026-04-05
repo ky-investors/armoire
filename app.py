@@ -1207,9 +1207,12 @@ def page_suggest():
         with st.spinner("🤖 スタイリスト AI がコーデを考えています..."):
             result = suggest_coord_with_gemini(items, profile, weather_for_ai, tpo=selected_tpo)
             st.session_state["coord_result"] = result
+            st.session_state["stylist_chat"] = []  # 新しい提案ごとにチャットリセット
 
-        outfits = st.session_state.get("coord_result", {}).get("outfits", [])
-        advice  = st.session_state.get("coord_result", {}).get("general_advice", "")
+    # ── コーデ結果表示（session_stateから常に再描画）──
+    if st.session_state.get("coord_result"):
+        outfits = st.session_state["coord_result"].get("outfits", [])
+        advice  = st.session_state["coord_result"].get("general_advice", "")
 
         if advice:
             st.info(f"💬 {advice}")
