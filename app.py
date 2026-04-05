@@ -154,6 +154,20 @@ def delete_cosmetic(cid: int):
         delete_storage_image(res.data[0].get("image_url", ""))
     sb.table("cosmetics").delete().eq("id", cid).execute()
 
+def update_cosmetic(cid: int, tags: dict):
+    """コスメのタグ情報を更新する"""
+    sb.table("cosmetics").update({
+        "category":              tags.get("category"),
+        "brand":                 tags.get("brand"),
+        "product_name":          tags.get("product_name"),
+        "color_name":            tags.get("color_name"),
+        "color_number":          tags.get("color_number"),
+        "finish":                tags.get("finish"),
+        "personal_color_match":  tags.get("personal_color_match"),
+        "notes":                 tags.get("notes"),
+    }).eq("id", cid).execute()
+
+
 def update_cosmetic_use(cid: int):
     sb  = _get_sb()
     now = datetime.datetime.now().isoformat()
@@ -1554,9 +1568,58 @@ def page_cosmetic_list():
                 </div>
                 """, unsafe_allow_html=True)
                 with st.expander("⚙ 操作", expanded=False):
-                    if st.button("🗑 削除", key=f"del_cosme_{c['id']}", use_container_width=True):
-                        delete_cosmetic(c["id"])
-                        st.success("削除しました。")
+                    col_e, col_d = st.columns(2)
+                    with col_e:
+                        edit_key = f"edit_cosme_{c['id']}"
+                        if st.button("✏️ 編集", key=f"editbtn_cosme_{c['id']}", use_container_width=True):
+                            st.session_state[edit_key] = not st.session_state.get(edit_key, False)
+                    with col_d:
+                        if st.button("🗑 削除", key=f"del_cosme_{c['id']}", use_container_width=True):
+                            delete_cosmetic(c["id"])
+                            st.success("削除しました。")
+                            st.rerun()
+
+                # コスメ編集フォーム
+                if st.session_state.get(f"edit_cosme_{c['id']}", False):
+                    st.markdown("---")
+                    st.markdown("**✏️ コスメ情報を編集**")
+                    cosme_cats = ["ベースメイク", "アイメイク", "リップ", "チーク",
+                                  "ハイライト・シェーディング", "ネイル", "スキンケア", "その他"]
+                    current_cat = c.get("category", "その他")
+                    ec_cat = st.selectbox("カテゴリー", cosme_cats,
+                                          index=cosme_cats.index(current_cat) if current_cat in cosme_cats else 0,
+                                          key=f"ec_cat_{c['id']}")
+                    ec_brand = st.text_input("ブランド", value=c.get("brand") or "", key=f"ec_brand_{c['id']}")
+                    ec_name  = st.text_input("品名", value=c.get("product_name") or "", key=f"ec_name_{c['id']}")
+                    ec_color = st.text_input("カラー名", value=c.get("color_name") or "", key=f"ec_color_{c['id']}")
+                    ec_num   = st.text_input("カラー番号", value=c.get("color_number") or "", key=f"ec_num_{c['id']}")
+                    finish_opts = ["マット", "セミマット", "グロス", "シマー", "ラメ", "自然な艶", "その他"]
+                    current_finish = c.get("finish", "その他")
+                    ec_finish = st.selectbox("仕上がり", finish_opts,
+                                             index=finish_opts.index(current_finish) if current_finish in finish_opts else 0,
+                                             key=f"ec_finish_{c['id']}")
+                    pc_opts = ["◎ ベスト", "○ 良い", "△ 普通", "× 合わない"]
+                    current_pc = c.get("personal_color_match", "○ 良い")
+                    ec_pc = st.selectbox("パーソナルカラー適合性", pc_opts,
+                                         index=pc_opts.index(current_pc) if current_pc in pc_opts else 1,
+                                         key=f"ec_pc_{c['id']}")
+                    ec_notes = st.text_area("メモ・特記事項", value=c.get("notes") or "",
+                                            height=80, key=f"ec_notes_{c['id']}")
+
+                    if st.button("💾 変更を保存", type="primary",
+                                 use_container_width=True, key=f"ec_save_{c['id']}"):
+                        update_cosmetic(c["id"], {
+                            "category": ec_cat,
+                            "brand": ec_brand,
+                            "product_name": ec_name,
+                            "color_name": ec_color,
+                            "color_number": ec_num,
+                            "finish": ec_finish,
+                            "personal_color_match": ec_pc,
+                            "notes": ec_notes,
+                        })
+                        st.success("✅ 更新しました！")
+                        st.session_state[f"edit_cosme_{c['id']}"] = False
                         st.rerun()
 
 # ════════════════════════════════════════════
