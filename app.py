@@ -1254,7 +1254,7 @@ def page_suggest():
                             system_instruction=COORD_SYSTEM_PROMPT,
                         )
                         # コンテキストとして提案結果と質問を渡す
-                        context = f"提案したコーデ内容：\n{result}\n\nユーザープロフィール：\n{_format_profile_for_prompt(profile)}"
+                        context = f"提案したコーデ内容：\n{st.session_state.get('coord_result', {})}\n\nユーザープロフィール：\n{_format_profile_for_prompt(profile)}"
                         chat_prompt = f"{context}\n\n上記のコーデ提案を踏まえて、以下の質問に答えてください：\n{question}"
                         resp = model.generate_content(chat_prompt, generation_config={"temperature": 0.7})
                         answer = resp.text.strip()
