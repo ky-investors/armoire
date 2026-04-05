@@ -102,6 +102,7 @@ def delete_item(item_id: int):
 
 def update_item(item_id: int, tags: dict):
     """アイテムのタグ情報を更新する"""
+    sb  = _get_sb()
     res = sb.table("clothing_items").update({
         "category":       tags.get("category"),
         "sub_category":   tags.get("sub_category"),
@@ -156,6 +157,7 @@ def delete_cosmetic(cid: int):
 
 def update_cosmetic(cid: int, tags: dict):
     """コスメのタグ情報を更新する"""
+    sb  = _get_sb()
     sb.table("cosmetics").update({
         "category":              tags.get("category"),
         "brand":                 tags.get("brand"),
