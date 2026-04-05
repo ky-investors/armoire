@@ -1,0 +1,25 @@
+# ════════════════════════════════════════════
+# Armoire — requirements.txt
+# Streamlit Cloud デプロイ用
+# ════════════════════════════════════════════
+
+# --- コア ---
+streamlit>=1.35.0
+
+# --- Supabase ---
+supabase>=2.4.0
+
+# --- 画像処理 ---
+Pillow>=10.0.0
+pillow-heif>=0.16.0      # iPhone の HEIC/HEIF 変換
+rembg>=2.0.57            # 背景透過
+
+# --- AI ---
+google-generativeai>=0.7.0
+
+# --- 天気 API ---
+requests>=2.31.0
+
+# --- その他（rembg の依存） ---
+onnxruntime>=1.17.0
+numpy>=1.26.0
