@@ -1767,9 +1767,18 @@ def page_shopping_advisor():
                 image_bytes, items, cosmetics, profile, price
             )
 
-        _render_shopping_result(result, price)
+        st.session_state["shopping_result"] = result
+        st.session_state["shopping_image"]  = image_bytes
+        st.session_state["shopping_chat"]   = []
 
-def _render_shopping_result(result: dict, price: float | None):
+    if st.session_state.get("shopping_result"):
+        _render_shopping_result(
+            st.session_state["shopping_result"],
+            price,
+            st.session_state.get("shopping_image"),
+        )
+
+def _render_shopping_result(result: dict, price: float | None, image_bytes: bytes | None = None):
     """判定結果をverdictに応じて色を変えて表示する"""
     verdict       = result.get("verdict", "CAUTION")
     verdict_reason = result.get("verdict_reason", "")
@@ -1947,6 +1956,51 @@ def _render_shopping_result(result: dict, price: float | None):
         st.error("🛑 AIの判定: **購入を見送ってください。** タンスの肥やしになる可能性が高いです。")
     else:
         st.warning("⚠️ AIの判定: **慎重に検討してください。** メリット・デメリットを十分考えて。")
+
+    # ── アドバイザーへの追加質問チャット ──
+    st.divider()
+    st.markdown("### 💬 アドバイザーに質問する")
+    st.caption("判定結果についてさらに詳しく聞けます。「他に合わせやすい色は？」「似たアイテムを教えて」など")
+
+    if "shopping_chat" not in st.session_state:
+        st.session_state["shopping_chat"] = []
+
+    for msg in st.session_state["shopping_chat"]:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    question = st.chat_input("アドバイザーに質問する...", key="shopping_chat_input")
+    if question:
+        st.session_state["shopping_chat"].append({"role": "user", "content": question})
+        with st.chat_message("user"):
+            st.markdown(question)
+
+        with st.chat_message("assistant"):
+            with st.spinner("🤔 考えています..."):
+                try:
+                    import google.generativeai as genai
+                    api_key = get_api_key()
+                    if not api_key:
+                        answer = "APIキーが設定されていません。"
+                    else:
+                        genai.configure(api_key=api_key)
+                        model = genai.GenerativeModel(
+                            model_name="gemini-2.5-flash",
+                            system_instruction=SHOPPING_SYSTEM_PROMPT,
+                        )
+                        context = f"先ほどの購入判定結果：\n{st.session_state.get('shopping_result', {})}\n\n"
+                        chat_history = st.session_state["shopping_chat"][:-1]
+                        messages = []
+                        for m in chat_history:
+                            role = "user" if m["role"] == "user" else "model"
+                            messages.append({"role": role, "parts": [m["content"]]})
+                        messages.append({"role": "user", "parts": [context + question]})
+                        resp = model.generate_content(messages)
+                        answer = resp.text.strip()
+                except Exception as e:
+                    answer = f"エラーが発生しました：{e}"
+            st.markdown(answer)
+            st.session_state["shopping_chat"].append({"role": "assistant", "content": answer})
 
 # ════════════════════════════════════════════
 # メイン
