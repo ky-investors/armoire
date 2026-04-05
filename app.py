@@ -992,10 +992,10 @@ def page_list():
                 _render_item_card(filtered[idx])
 
 def _render_item_card(item: dict):
-    img_path = item.get("image_url", "")
+    img_path = item.get("image_url") or ""
     emoji = CATEGORY_EMOJI.get(item.get("category", ""), "📦")
 
-    if img_path:
+    if img_path and img_path.startswith("http"):
         st.image(img_path, use_container_width=True)
     else:
         st.markdown(
