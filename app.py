@@ -332,6 +332,7 @@ COORD_SYSTEM_PROMPT = """
 あなたはプロのパーソナルスタイリストです。
 ユーザーのクローゼット情報・プロフィールをもとに、最高のコーディネートを提案してください。
 必ず以下のJSON形式のみで返してください（```json などは不要）。
+item_idsには、提案で使用するアイテムのID番号（クローゼット内容の「ID:X」の数値）を必ず入れてください。
 
 {
   "outfits": [
@@ -339,6 +340,7 @@ COORD_SYSTEM_PROMPT = """
       "title": "コーデのタイトル（例: モノトーンハンサム）",
       "occasion": "シーン（例: 仕事、デート、休日）",
       "items": ["アイテム説明1", "アイテム説明2", ...],
+      "item_ids": [5, 12, 3],
       "styling_tip": "スタイリングのポイント"
     }
   ],
@@ -566,7 +568,7 @@ def _format_closet_for_prompt(items: list[dict]) -> str:
         season = _safe_json_loads(it.get("season", "[]"))
         style  = _safe_json_loads(it.get("style_tags", "[]"))
         lines.append(
-            f"- {it.get('category','')} / {it.get('sub_category','')} "
+            f"- ID:{it.get('id','')} {it.get('category','')} / {it.get('sub_category','')} "
             f"[{it.get('color_main','')}] 素材:{it.get('material','')} "
             f"季節:{','.join(season)} スタイル:{','.join(style)}"
         )
@@ -1212,14 +1214,35 @@ def page_suggest():
         if advice:
             st.info(f"💬 {advice}")
 
+        # IDをキーにした画像辞書を作成（高速ルックアップ用）
+        item_image_map = {it["id"]: it.get("image_url", "") for it in items if it.get("id")}
+
         for i, outfit in enumerate(outfits):
             with st.expander(
                 f"🎨 コーデ {i+1}: {outfit.get('title', '')} — {outfit.get('occasion', '')}",
                 expanded=True,
             ):
                 outfit_items = outfit.get("items", [])
+                item_ids     = outfit.get("item_ids", [])
+
+                # アイテムリスト＋サムネイル表示
                 for oi in outfit_items:
                     st.markdown(f"- {oi}")
+
+                # item_ids に一致する画像をサムネイル表示
+                if item_ids:
+                    thumb_urls = []
+                    for iid in item_ids:
+                        url = item_image_map.get(int(iid) if isinstance(iid, (int, float)) else iid, "")
+                        if url and url.startswith("http"):
+                            thumb_urls.append(url)
+                    if thumb_urls:
+                        st.markdown("**📸 使用アイテム**")
+                        cols = st.columns(min(len(thumb_urls), 4))
+                        for j, url in enumerate(thumb_urls[:4]):
+                            with cols[j]:
+                                st.image(url, use_container_width=True)
+
                 tip = outfit.get("styling_tip", "")
                 if tip:
                     st.success(f"💡 ポイント: {tip}")
