@@ -1204,9 +1204,10 @@ def page_suggest():
     if st.button("✨ AIにコーデを提案してもらう", type="primary", use_container_width=True):
         with st.spinner("🤖 スタイリスト AI がコーデを考えています..."):
             result = suggest_coord_with_gemini(items, profile, weather_for_ai, tpo=selected_tpo)
+            st.session_state["coord_result"] = result
 
-        outfits = result.get("outfits", [])
-        advice  = result.get("general_advice", "")
+        outfits = st.session_state.get("coord_result", {}).get("outfits", [])
+        advice  = st.session_state.get("coord_result", {}).get("general_advice", "")
 
         if advice:
             st.info(f"💬 {advice}")
