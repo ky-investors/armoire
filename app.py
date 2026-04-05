@@ -1223,6 +1223,45 @@ def page_suggest():
                 if tip:
                     st.success(f"💡 ポイント: {tip}")
 
+        # ── スタイリストへの追加質問 ──
+        st.divider()
+        st.markdown("### 💬 スタイリストに質問する")
+        st.caption("提案されたコーデについて、さらに詳しく聞いてみましょう。")
+
+        if "stylist_chat" not in st.session_state:
+            st.session_state["stylist_chat"] = []
+
+        # チャット履歴表示
+        for msg in st.session_state["stylist_chat"]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        # 質問入力
+        if question := st.chat_input("例：Tシャツはインする？出す？どちらがいい？"):
+            st.session_state["stylist_chat"].append({"role": "user", "content": question})
+            with st.chat_message("user"):
+                st.markdown(question)
+
+            # AIに質問
+            with st.chat_message("assistant"):
+                with st.spinner("スタイリストが考えています..."):
+                    try:
+                        import google.generativeai as genai
+                        genai.configure(api_key=get_api_key())
+                        model = genai.GenerativeModel(
+                            model_name="gemini-2.5-flash",
+                            system_instruction=COORD_SYSTEM_PROMPT,
+                        )
+                        # コンテキストとして提案結果と質問を渡す
+                        context = f"提案したコーデ内容：\n{result}\n\nユーザープロフィール：\n{_format_profile_for_prompt(profile)}"
+                        chat_prompt = f"{context}\n\n上記のコーデ提案を踏まえて、以下の質問に答えてください：\n{question}"
+                        resp = model.generate_content(chat_prompt, generation_config={"temperature": 0.7})
+                        answer = resp.text.strip()
+                    except Exception as e:
+                        answer = f"エラーが発生しました：{e}"
+                st.markdown(answer)
+                st.session_state["stylist_chat"].append({"role": "assistant", "content": answer})
+
 # ════════════════════════════════════════════
 # ページ: コスメ登録
 # ════════════════════════════════════════════
