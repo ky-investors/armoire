@@ -870,7 +870,7 @@ def page_register():
     st.divider()
 
     # ── Step1: AIタグ付けボタン ──
-    if st.button("✨ AIにタグ付けして登録する", type="primary", use_container_width=True):
+    if not st.session_state.get("clothing_tags"):
         with st.spinner("🤖 AIが服を分析中..."):
             tags = analyze_clothing_with_gemini(processed_bytes)
         st.session_state["clothing_tags"] = tags
