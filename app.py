@@ -1001,7 +1001,7 @@ def page_register():
         st.divider()
         if st.button("💾 この内容でDBに保存する", type="primary", use_container_width=True, key="cl_save"):
             with st.spinner("☁️ 画像をクラウドに保存中..."):
-                image_url = upload_image(st.session_state["clothing_image"], "clothing")
+                image_url = save_image(st.session_state["clothing_image"], "clothing")
             item_id = save_item(image_url, tags)
             st.success(f"✅ 登録完了！（ID: {item_id}）クローゼット一覧で確認できます。")
             st.session_state["clothing_tags"] = None
@@ -1324,7 +1324,7 @@ def page_cosmetic_register():
         st.divider()
         if st.button("💾 コスメを登録する", type="primary", use_container_width=True, key="cosme_save"):
             with st.spinner("☁️ 画像をクラウドに保存中..."):
-                image_url = upload_image(st.session_state["cosme_image"], "cosme")
+                image_url = save_image(st.session_state["cosme_image"], "cosme")
             cid = save_cosmetic(image_url, tags)
             st.success(f"✅ 登録完了！（ID: {cid}）コスメ一覧で確認できます。")
             st.session_state["cosme_tags"] = None
