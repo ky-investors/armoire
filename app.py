@@ -1116,6 +1116,17 @@ def page_suggest():
 
     st.divider()
 
+    # ── TPO選択 ──
+    st.markdown("### 👔 TPO・シーン")
+    TPO_OPTIONS = [
+        "オフィス・仕事」, "商談・プレゼン", "カジュアルデート",
+        "友人とのランチ・お出かけ", "週末お出かけ", "スポーツ・アクティブ",
+        "パーティー・特別な席", "旅行", "自宅リラックス"
+    ]
+    selected_tpo = st.selectbox("🎯 今日のシーン", TPO_OPTIONS, key="tpo_select")
+
+    st.divider()
+
     with st.expander("📋 プロフィール確認", expanded=False):
         st.text(_format_profile_for_prompt(profile))
 
@@ -1123,7 +1134,7 @@ def page_suggest():
 
     if st.button("✨ AIにコーデを提案してもらう", type="primary", use_container_width=True):
         with st.spinner("🤖 スタイリスト AI がコーデを考えています..."):
-            result = suggest_coord_with_gemini(items, profile, weather_for_ai)
+            result = suggest_coord_with_gemini(items, profile, weather_for_ai, tpo=selected_tpo)
 
         outfits = result.get("outfits", [])
         advice  = result.get("general_advice", "")
@@ -1362,11 +1373,20 @@ def page_makeup():
     with st.expander("📋 プロフィール確認", expanded=False):
         st.text(_format_profile_for_prompt(profile))
 
+    # ── TPO選択 ──
+    st.markdown("### 👔 TPO・シーン")
+    MAKEUP_TPO = [
+        "オフィス・デイリー", "商談・フォーマル", "デート",
+        "友人とのランチ・お出かけ", "パーティー・特別な席",
+        "週末カジュアル", "スポーツ・アクティブ"
+    ]
+    selected_makeup_tpo = st.selectbox("🎯 今日のシーン", MAKEUP_TPO, key="makeup_tpo_select")
+
     st.info(f"コスメ {len(cosmetics)} 点からメイクを提案します。")
 
     if st.button("💋 AIにメイクを提案してもらう", type="primary", use_container_width=True):
         with st.spinner("🤖 メイクアップアーティスト AI が考えています..."):
-            result = suggest_makeup_with_gemini(cosmetics, profile)
+            result = suggest_makeup_with_gemini(cosmetics, profile, tpo=selected_makeup_tpo)
 
         looks  = result.get("looks", [])
         advice = result.get("general_advice", "")
